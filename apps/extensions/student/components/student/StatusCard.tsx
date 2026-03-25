@@ -43,7 +43,13 @@ export function StatusCard({
         </div>
         <p className="text-sm text-[#6a5038]">Professor atual: {teacherId || "-"}</p>
         <p className="text-sm text-[#6a5038]">Sessão: {activeSessionId || "-"}</p>
-        <Button variant="ghost" onClick={onToggleAutoReply}>
+        <Button
+          variant="ghost"
+          onClick={onToggleAutoReply}
+          disabled
+          aria-disabled="true"
+          title="Auto screenshot está sempre habilitado"
+        >
           {autoReplyEnabled ? "Auto screenshot ligado" : "Auto screenshot desligado"}
         </Button>
         <Button variant="outline" onClick={onDisconnect} disabled={!mqttConnected}>

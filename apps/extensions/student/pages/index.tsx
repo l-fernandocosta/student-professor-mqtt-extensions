@@ -22,6 +22,7 @@ export default function StudentHome(): React.JSX.Element {
     lastCorrelationId,
     autoReplyEnabled,
     mqttConnected,
+    unreadTeacherMessages,
     lastScreenshotPreview,
     screenshotResponseState,
     incomingScreenshotAt,
@@ -62,7 +63,10 @@ export default function StudentHome(): React.JSX.Element {
           <p className="text-sm text-[#7a6047]">Fique online para conversar e responder screenshots.</p>
           <p className="mt-2 text-xs text-[#9f7d5e]">Sessão ativa: {activeSessionId || "aguardando professor"}</p>
         </div>
-        <Badge variant={mqttConnected ? "success" : "warning"}>{mqttConnected ? "Online" : "Offline"}</Badge>
+        <div className="flex items-center gap-2">
+          {unreadTeacherMessages > 0 && <Badge variant="warning">{unreadTeacherMessages} novas</Badge>}
+          <Badge variant={mqttConnected ? "success" : "warning"}>{mqttConnected ? "Online" : "Offline"}</Badge>
+        </div>
       </header>
 
       {toastMessage && (

@@ -8,7 +8,9 @@ import { z } from "zod";
 const MqttTopics = {
   screenshotRequest: (studentId: string) => `screenshot/request/${studentId}`,
   screenshotResponse: (teacherId: string) => `screenshot/response/${teacherId}`,
-  chatDeliver: (sessionId: string) => `chat/session/${sessionId}/deliver`
+  chatDeliver: (sessionId: string) => `chat/session/${sessionId}/deliver`,
+  chatActive: (studentId: string) => `chat/active/${studentId}`,
+  presenceHeartbeat: (studentId: string) => `presence/student/${studentId}/heartbeat`
 };
 
 const authSchema = z.object({
@@ -70,6 +72,7 @@ export function useStudentHome() {
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(true);
   const [mqttConnected, setMqttConnected] = useState(false);
+  const [unreadTeacherMessages, setUnreadTeacherMessages] = useState(0);
   const [lastScreenshotAt, setLastScreenshotAt] = useState("");
   const [lastScreenshotPreview, setLastScreenshotPreview] = useState("");
   const [screenshotResponseState, setScreenshotResponseState] = useState<ScreenshotResponseState>("idle");
@@ -236,7 +239,8 @@ export function useStudentHome() {
     void (async () => {
       try {
         const response = await fetch(
-          `${apiBase}/chat/history?sessionId=${encodeURIComponent(activeSessionId)}&limit=50`
+          `${apiBase}/chat/history?sessionId=${encodeURIComponent(activeSessionId)}&limit=50`,
+          { headers: { authorization: `Bearer ${token}` } }
         );
         if (!response.ok) return;
         const history = (await response.json()) as Array<{ senderId: string; content: string; createdAt: string }>;
@@ -255,7 +259,7 @@ export function useStudentHome() {
         pushLog(`Falha ao restaurar historico: ${(error as Error).message}`);
       }
     })();
-  }, [apiBase, activeSessionId, studentId, chatFeed.length]);
+  }, [apiBase, activeSessionId, studentId, chatFeed.length, token]);
 
   const screenshotMutation = useMutation({
     mutationFn: async (input: { correlationId: string; teacherId: string; imageBase64: string }) => {
@@ -275,7 +279,9 @@ export function useStudentHome() {
       return (await response.json()) as { updated: boolean };
     },
     onMutate: () => {
-      setScreenshotResponseState("sending");
+      // When auto-reply already published via MQTT, keep the UI as "sent" and
+      // treat this mutation as "persist to history" only (don't regress status).
+      setScreenshotResponseState((current) => (current === "sent" ? "sent" : "sending"));
       pushActivity("Enviando screenshot...");
     },
     onSuccess: (data) => {
@@ -285,9 +291,10 @@ export function useStudentHome() {
       pushActivity("Screenshot enviado.");
     },
     onError: (error) => {
-      setScreenshotResponseState("error");
+      // If MQTT send already succeeded, don't show a scary "failed to send".
+      setScreenshotResponseState((current) => (current === "sent" ? "sent" : "error"));
       pushLog((error as Error).message);
-      pushActivity("Falha ao enviar screenshot.");
+      pushActivity("Falha ao salvar screenshot no histórico.");
     }
   });
 
@@ -315,6 +322,7 @@ export function useStudentHome() {
     onSuccess: (_, sentReply) => {
       appendChatMessage("student", sentReply);
       setReplyMessage("");
+      setUnreadTeacherMessages(0);
       pushLog("Resposta enviada via MQTT");
       pushActivity("Mensagem enviada ao professor.");
       pushToast("Mensagem enviada.");
@@ -324,15 +332,26 @@ export function useStudentHome() {
 
   useEffect(() => {
     if (!heartbeatEnabled || !studentId) return;
-    const timer = setInterval(async () => {
-      await fetch(`${apiBase}/presence/heartbeat/${studentId}`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` }
-      });
-      pushLog("Heartbeat enviado");
-    }, 10_000);
+    const client = mqttRef.current;
+    if (!client || !mqttConnected) return;
+
+    const sendHeartbeat = (): void => {
+      client.publish(
+        MqttTopics.presenceHeartbeat(studentId),
+        JSON.stringify({
+          eventType: "PRESENCE_HEARTBEAT",
+          version: 1,
+          timestamp: new Date().toISOString(),
+          payload: { studentId }
+        }),
+        { qos: 0 }
+      );
+    };
+
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 10_000);
     return () => clearInterval(timer);
-  }, [apiBase, heartbeatEnabled, studentId, token]);
+  }, [heartbeatEnabled, studentId, mqttConnected]);
 
   const captureCurrentTabBase64 = async (): Promise<string> => {
     const fallbackImage =
@@ -387,11 +406,21 @@ export function useStudentHome() {
       setMqttConnected(true);
       client.subscribe(MqttTopics.screenshotRequest(studentId), { qos: 1 });
       client.subscribe("chat/session/+/deliver", { qos: 1 });
+      client.subscribe(MqttTopics.chatActive(studentId), { qos: 1 });
       pushLog("MQTT conectado e inscrito");
     });
 
     client.on("message", async (topic, payload) => {
       pushLog(`MQTT recebido em ${topic}`);
+      if (topic === MqttTopics.chatActive(studentId)) {
+        const parsed = JSON.parse(payload.toString()) as { sessionId?: string; teacherId?: string };
+        const nextSessionId = String(parsed.sessionId ?? "");
+        const nextTeacherId = String(parsed.teacherId ?? "");
+        if (nextTeacherId) setTeacherId(nextTeacherId);
+        if (nextSessionId) setActiveSessionId(nextSessionId);
+        pushActivity("Sessão iniciada pelo professor.");
+        return;
+      }
       if (topic.startsWith("chat/session/") && topic.endsWith("/deliver")) {
         const parts = topic.split("/");
         const incomingSessionId = parts[2] ?? "";
@@ -405,6 +434,7 @@ export function useStudentHome() {
         if (!senderId || senderId !== studentId) {
           if (senderId) setTeacherId(senderId);
           appendChatMessage("teacher", incomingText);
+          setUnreadTeacherMessages((prev) => prev + 1);
           pushActivity("Nova mensagem do professor.");
         } else {
           appendChatMessage("student", incomingText);
@@ -422,7 +452,6 @@ export function useStudentHome() {
         setLastCorrelationId(responseCorrelationId);
         setIncomingScreenshotAt(new Date().toISOString());
         setScreenshotResponseState("received_request");
-        setShowScreenshotDialog(true);
         pushActivity("Professor solicitou um screenshot.");
 
         const imageBase64 = await captureCurrentTabBase64();
@@ -454,6 +483,7 @@ export function useStudentHome() {
             imageBase64
           });
         } else {
+          setShowScreenshotDialog(true);
           pushLog("Pedido de screenshot recebido. Auto resposta desativada.");
         }
       }
@@ -520,6 +550,7 @@ export function useStudentHome() {
     lastCorrelationId,
     autoReplyEnabled,
     mqttConnected,
+    unreadTeacherMessages,
     lastScreenshotPreview,
     screenshotResponseState,
     incomingScreenshotAt,
