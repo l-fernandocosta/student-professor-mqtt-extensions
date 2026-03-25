@@ -90,7 +90,7 @@ export class ScreenshotService {
       teacherId: input.teacherId,
       studentId: input.studentId,
       correlationId: input.correlationId,
-      contentType: input.contentType ?? "image/png",
+      contentType: "image/png",
       imageUrl: storageUrl ?? undefined,
       capturedAt: new Date().toISOString()
     });
@@ -137,7 +137,7 @@ export class ScreenshotService {
       teacherId: row.teacher_id,
       studentId: row.student_id,
       status: row.status,
-      storageUrl: row.storage_url,
+      storageUrl: row.storage_url ? this.s3StorageService.toPublicUrl(row.storage_url) : null,
       capturedAt: row.captured_at,
       createdAt: row.created_at
     }));

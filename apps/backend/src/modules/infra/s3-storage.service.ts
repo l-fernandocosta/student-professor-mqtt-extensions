@@ -44,4 +44,13 @@ export class S3StorageService implements OnModuleInit {
 
     return `${this.publicEndpoint}/${this.bucket}/${key}`;
   }
+
+  toPublicUrl(storageUrl: string): string {
+    const trimmed = storageUrl.trim();
+    if (!trimmed) return trimmed;
+
+    // Normalize legacy/incorrect URLs that point to the internal docker hostname.
+    const normalized = trimmed.replace(/^http:\/\/localstack:4566\b/, this.publicEndpoint);
+    return normalized;
+  }
 }
