@@ -1,0 +1,14 @@
+node_modules
+.turbo
+.env
+.env.*
+!.env.example
+dist
+out
+*.tgz
+coverage
+.next
+*.log
+pnpm-lock.yaml
+.pnpm-home
+.pnpm-store

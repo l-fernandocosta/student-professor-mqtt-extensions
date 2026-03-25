@@ -1,0 +1,19 @@
+{
+  "name": "@inicie/shared-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "lint": "echo \"lint shared-contracts\"",
+    "test": "echo \"test shared-contracts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo \"format shared-contracts\""
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
