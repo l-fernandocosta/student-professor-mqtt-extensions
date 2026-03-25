@@ -1,0 +1,53 @@
+config:
+  target: "mqtt://localhost:1883"
+  phases:
+    - name: warmup
+      duration: 20
+      arrivalRate: 2
+    - name: baseline_10x50
+      duration: 60
+      arrivalRate: 10
+  engines:
+    mqtt: {}
+  mqtt:
+    clean: true
+    protocolVersion: 4
+    auth:
+      clientId: "inicie-loadtest-{{ $uuid }}"
+  processor: "./processors/auth.cjs"
+
+scenarios:
+  - name: teacher_mqtt_flow
+    weight: 1
+    beforeScenario: "ensureTeacherAuth"
+    flow:
+      - function: "setSessionAndIds"
+      - publish:
+          topic: "chat/session/{{ sessionId }}/send"
+          payload:
+            eventId: "{{ $uuid }}"
+            senderId: "{{ teacherId }}"
+            receiverId: "{{ teacherId }}"
+            payload:
+              message: "loadtest mqtt: teacher message"
+      - think: 1
+
+  - name: student_mqtt_flow
+    weight: 5
+    beforeScenario: "ensureStudentAuth"
+    flow:
+      - function: "setSessionAndIds"
+      - publish:
+          topic: "presence/student/{{ studentId }}/heartbeat"
+          payload:
+            studentId: "{{ studentId }}"
+      - publish:
+          topic: "chat/session/{{ sessionId }}/send"
+          payload:
+            eventId: "{{ $uuid }}"
+            senderId: "{{ studentId }}"
+            receiverId: "{{ studentId }}"
+            payload:
+              message: "loadtest mqtt: student message"
+      - think: 1
+

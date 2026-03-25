@@ -1,0 +1,77 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - name: warmup
+      duration: 30
+      arrivalRate: 10
+    - name: stress_100x500
+      duration: 120
+      arrivalRate: 100
+  defaults:
+    headers:
+      content-type: application/json
+  variables:
+    apiBase: "http://localhost:3000/api"
+  processor: "./processors/auth.cjs"
+
+scenarios:
+  - name: teacher_http_flow
+    weight: 1
+    beforeScenario: "ensureTeacherAuth"
+    flow:
+      - function: "setSessionAndIds"
+      - post:
+          url: "/api/presence/heartbeat/{{ teacherId }}"
+          headers:
+            authorization: "Bearer {{ token }}"
+      - post:
+          url: "/api/chat/send"
+          headers:
+            authorization: "Bearer {{ token }}"
+          json:
+            eventId: "{{ $uuid }}"
+            sessionId: "{{ sessionId }}"
+            senderId: "{{ teacherId }}"
+            receiverId: "{{ teacherId }}"
+            content: "loadtest: teacher message"
+      - post:
+          url: "/api/screenshot/request"
+          headers:
+            authorization: "Bearer {{ token }}"
+          json:
+            eventId: "{{ $uuid }}"
+            teacherId: "{{ teacherId }}"
+            studentId: "{{ teacherId }}"
+      - think: 1
+      - post:
+          url: "/api/screenshot/response"
+          headers:
+            authorization: "Bearer {{ token }}"
+          json:
+            correlationId: "{{ $uuid }}"
+            teacherId: "{{ teacherId }}"
+            studentId: "{{ teacherId }}"
+            contentType: "image/png"
+            imageBase64: "{{ imageBase64 }}"
+
+  - name: student_http_flow
+    weight: 5
+    beforeScenario: "ensureStudentAuth"
+    flow:
+      - function: "setSessionAndIds"
+      - post:
+          url: "/api/presence/heartbeat/{{ studentId }}"
+          headers:
+            authorization: "Bearer {{ token }}"
+      - think: 1
+      - post:
+          url: "/api/chat/send"
+          headers:
+            authorization: "Bearer {{ token }}"
+          json:
+            eventId: "{{ $uuid }}"
+            sessionId: "{{ sessionId }}"
+            senderId: "{{ studentId }}"
+            receiverId: "{{ studentId }}"
+            content: "loadtest: student message"
+

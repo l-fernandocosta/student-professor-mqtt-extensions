@@ -1,12 +1,12 @@
 # Inicie - Realtime Platform (Desafio Fullstack)
 
-Implementacao em andamento do desafio tecnico com:
+Implementação do desafio técnico com:
 
 - Backend `NestJS + TypeScript`
-- `PostgreSQL` para persistencia
-- `Redis` para presenca/rate-limit/cache
+- `PostgreSQL` para persistência
+- `Redis` para presença/cache
 - `EMQX` para comunicacao MQTT em tempo real
-- 2 extensoes Chrome (Professor e Aluno) em `Next.js + React + TypeScript`
+- 2 extensões Chrome (Professor e Aluno) em `Next.js + React + TypeScript` (MV3)
 - Monorepo com `Turborepo + pnpm workspaces`
 
 ---
@@ -25,7 +25,7 @@ docker-compose.yml
 ```
 
 - `apps/backend`: API NestJS e orquestracao dos fluxos.
-- `apps/extensions/*`: UIs iniciais das extensoes.
+- `apps/extensions/*`: extensões MV3 (Professor/Aluno).
 - `packages/shared-contracts`: contratos MQTT compartilhados (topics + envelopes).
 
 ---
@@ -33,29 +33,36 @@ docker-compose.yml
 ## 2) Pre-requisitos
 
 - Node.js 18+ (recomendado 20+)
-- pnpm (via Corepack)
+- pnpm (via Corepack: `corepack enable`)
 - Docker + Docker Compose
+- AWS CLI (apenas para comandos `make localstack-*`)
 
 ---
 
-## 3) Setup rapido
+## 3) Setup rápido (recomendado)
 
-1. Copie variaveis de ambiente:
+1. Copie variáveis de ambiente:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Suba a infraestrutura:
+2. Instale dependências:
 
 ```bash
-docker compose up --build
+make install
+```
+
+3. Suba a infraestrutura (Postgres + Redis + EMQX + LocalStack + Backend):
+
+```bash
+make docker-up-detached
 ```
 
 Servicos esperados:
 
-- Backend: `http://localhost:3000`
-- Healthcheck: `http://localhost:3000/api/health`
+- Backend: `http://localhost:${BACKEND_PORT:-3000}`
+- Healthcheck: `http://localhost:${BACKEND_PORT:-3000}/api/health`
 - EMQX MQTT: `localhost:1883`
 - EMQX WebSocket MQTT: `ws://localhost:8083/mqtt`
 - EMQX Dashboard: `http://localhost:18083`
@@ -63,33 +70,56 @@ Servicos esperados:
 - Redis: `localhost:6379`
 - LocalStack S3 endpoint: `http://localhost:4566`
 
-> Nota: em alguns ambientes, o `pnpm install` pode falhar por restricao de rede. Se ocorrer timeout, execute novamente quando houver acesso ao registry.
-
----
-
-## 4) Scripts uteis
-
-Na raiz:
+4. (Opcional) Garanta que o bucket exista no LocalStack:
 
 ```bash
-pnpm dev
-pnpm build
-pnpm test
-pnpm lint
-pnpm typecheck
-pnpm docker:up
-pnpm docker:down
+make localstack-s3-init
 ```
 
 ---
 
-## 5) Estado atual da implementacao
+## 4) Rodando em modo dev (sem Docker do backend)
+
+Se preferir rodar o backend localmente (mas mantendo a infra via Docker):
+
+```bash
+make docker-up-detached
+make backend-dev
+```
+
+---
+
+## 5) Extensões (build + instalação no Chrome)
+
+As extensões são geradas como assets estáticos e empacotadas em `dist/`.
+
+1. Build das duas extensões:
+
+```bash
+make build-extensions
+```
+
+2. Instale no Chrome:
+
+- Abra `chrome://extensions`
+- Ative **Developer mode**
+- Clique em **Load unpacked**
+- Selecione:
+  - `apps/extensions/professor/dist`
+  - `apps/extensions/student/dist`
+
+> Dica: se você rebuildar, clique em **Reload** em cada extensão no `chrome://extensions`.
+
+---
+
+## 6) Estado atual da implementação
 
 ### Backend
 
 Ja implementado:
 
 - `Auth`: `register/login` com hash (`bcryptjs`) e JWT (`jsonwebtoken`)
+- `Session cache`: validação rápida de token em Redis (hash do token)
 - `Presence`: heartbeat com TTL real no Redis
 - `Chat`: invariantes de dominio + idempotencia por `eventId` + persistencia em Postgres
 - `Screenshot`: request + response com `correlationId`, persistencia e rate limit por professor
@@ -102,31 +132,36 @@ Ja implementado:
 
 Ja implementado:
 
-- estrutura MV3 minima
+- estrutura MV3
 - painel funcional minimo Professor:
   - register/login
-  - consulta de alunos online
-  - envio de chat
-  - solicitacao de screenshot
+  - lista de alunos online em tempo real (`presence/online`)
+  - envio de chat via MQTT
+  - solicitação de screenshot
+  - histórico de screenshots no chat
 - painel funcional minimo Aluno:
   - register/login
-  - heartbeat periodico
+  - heartbeat periódico via MQTT (`presence/student/{studentId}/heartbeat`)
   - envio de resposta de screenshot por `correlationId`
+  - badge de mensagens novas
+  - auto screenshot sempre habilitado
 
 Pendente:
 
-- captura real 100% no contexto MV3 (service worker/background) para fluxo final
-- UI final de chat/historico em formato produto
+- autenticação no broker (EMQX) por JWT/credenciais (hardening)
+- migrations versionadas do schema Postgres
+- testes/carga conforme `development.md`
 
 ---
 
-## 6) Contratos MQTT (base)
+## 7) Contratos MQTT (base)
 
 Definidos em `packages/shared-contracts/src/mqtt-contracts.ts`:
 
 - `presence/student/{studentId}/heartbeat`
 - `chat/session/{sessionId}/send`
 - `chat/session/{sessionId}/deliver`
+- `chat/active/{studentId}` (handshake de sessão professor -> aluno)
 - `screenshot/request/{studentId}`
 - `screenshot/response/{teacherId}`
 
@@ -136,7 +171,7 @@ Envelope padrao com:
 
 ---
 
-## 7) Banco de dados (schema bootstrap atual)
+## 8) Banco de dados (schema bootstrap atual)
 
 Tabelas criadas automaticamente no startup do backend:
 
@@ -149,7 +184,7 @@ Tabelas criadas automaticamente no startup do backend:
 
 ---
 
-## 8) Fluxos alvo do desafio (resumo)
+## 9) Fluxos alvo do desafio (resumo)
 
 1. **Presenca**: aluno envia heartbeat -> backend salva TTL Redis -> professor consulta online.
 2. **Chat**: professor/aluno publica evento -> backend valida e persiste -> entrega realtime.
@@ -157,7 +192,7 @@ Tabelas criadas automaticamente no startup do backend:
 
 ---
 
-## 9) O que falta para fechar o desafio
+## 10) O que falta para fechar o desafio
 
 ### Critico (funcionalidade)
 
@@ -187,7 +222,94 @@ Tabelas criadas automaticamente no startup do backend:
 
 ---
 
-## 10) Referencias
+## 11) Makefile (atalhos)
+
+Veja `make help` para a lista de comandos. Os mais usados:
+
+```bash
+make install
+make docker-up-detached
+make docker-logs
+make backend-dev
+make build-extensions
+```
+
+---
+
+## 12) Guia de testes
+
+### Rodando a suite do monorepo
+
+Na raiz do projeto:
+
+```bash
+make test
+make typecheck
+make lint
+```
+
+> Observação: hoje alguns `scripts` de `test`/`lint` ainda estão como placeholder em alguns pacotes. O `typecheck` é o melhor “sinal rápido” que tudo compila.
+
+### Rodando por app (isolado)
+
+- **Backend**:
+
+```bash
+pnpm --filter @inicie/backend typecheck
+pnpm --filter @inicie/backend test
+```
+
+- **Extensão Professor**:
+
+```bash
+pnpm --filter @inicie/extension-professor typecheck
+pnpm --filter @inicie/extension-professor test
+```
+
+- **Extensão Aluno**:
+
+```bash
+pnpm --filter @inicie/extension-student typecheck
+pnpm --filter @inicie/extension-student test
+```
+
+### Testes de carga (Artillery)
+
+Pré-requisitos:
+
+- Infra levantada: `make docker-up-detached`
+- Backend saudável: `curl http://localhost:3000/api/health`
+
+Executar:
+
+```bash
+make load-baseline
+make load-stress
+```
+
+O que cada teste faz:
+
+- **HTTP**: autentica (register/login) e exercita endpoints de `presence`, `chat` e `screenshot` com JWT.
+- **MQTT**: abre conexões no broker e publica em:
+  - `presence/student/{studentId}/heartbeat`
+  - `chat/session/{sessionId}/send`
+
+Arquivos:
+
+- `load-tests/artillery/baseline.http.yml`
+- `load-tests/artillery/baseline.mqtt.yml`
+- `load-tests/artillery/stress.http.yml`
+- `load-tests/artillery/stress.mqtt.yml`
+- `load-tests/artillery/processors/auth.cjs`
+
+Personalização rápida:
+
+- `LOADTEST_API_BASE`: base HTTP (default `http://localhost:3000/api`)
+- `LOADTEST_PASSWORD`: senha usada nos usuários do load test (default `loadtest123`)
+
+---
+
+## 13) Referências
 
 - EMQX Documentation: https://docs.emqx.com/en/
 

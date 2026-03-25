@@ -8,8 +8,11 @@ S3_BUCKET ?= inicie-screenshots
 
 .PHONY: help install dev build test lint typecheck format \
 	docker-up docker-up-detached docker-down docker-logs \
+	docker-ps \
 	backend-dev professor-dev student-dev \
 	build-extension-professor build-extension-student build-extensions \
+	load-baseline load-stress \
+	localstack-s3-init \
 	localstack-s3-ls localstack-s3-tree localstack-s3-download-last \
 	localstack-s3-rm-all
 
@@ -28,14 +31,18 @@ help:
 	@echo "  make lint                     # Lint geral"
 	@echo "  make typecheck                # Typecheck geral"
 	@echo "  make format                   # Format geral"
+	@echo "  make load-baseline            # Load test (baseline 10x50) via Artillery"
+	@echo "  make load-stress              # Load test (stress 100x500) via Artillery"
 	@echo ""
 	@echo "Docker / Infra:"
 	@echo "  make docker-up                # Sobe infra + backend (foreground)"
 	@echo "  make docker-up-detached       # Sobe infra + backend (background)"
 	@echo "  make docker-down              # Derruba containers e volumes"
 	@echo "  make docker-logs              # Logs de todos os servicos"
+	@echo "  make docker-ps                # Lista containers do compose"
 	@echo ""
 	@echo "LocalStack S3:"
+	@echo "  make localstack-s3-init       # Cria bucket (se nao existir)"
 	@echo "  make localstack-s3-ls         # Lista buckets"
 	@echo "  make localstack-s3-tree       # Lista objetos do bucket"
 	@echo "  make localstack-s3-download-last # Baixa o ultimo screenshot para ./tmp-last-screenshot.png"
@@ -74,6 +81,9 @@ docker-down:
 docker-logs:
 	docker compose logs -f
 
+docker-ps:
+	docker compose ps
+
 backend-dev:
 	pnpm --filter @inicie/backend dev
 
@@ -92,6 +102,19 @@ build-extension-student:
 build-extensions:
 	pnpm --filter @inicie/extension-professor build:extension && \
 	pnpm --filter @inicie/extension-student build:extension
+
+load-baseline:
+	pnpm run load:baseline
+
+load-stress:
+	pnpm run load:stress
+
+localstack-s3-init:
+	@set -euo pipefail; \
+	echo "Garantindo bucket s3://$(S3_BUCKET) em $(LOCALSTACK_ENDPOINT)"; \
+	AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION) \
+	aws --endpoint-url $(LOCALSTACK_ENDPOINT) s3 mb s3://$(S3_BUCKET) 2>/dev/null || true; \
+	echo "OK"
 
 localstack-s3-ls:
 	AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION) \
