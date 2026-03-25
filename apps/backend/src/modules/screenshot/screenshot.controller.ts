@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { randomUUID } from "crypto";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { MqttGatewayService } from "../mqtt/mqtt.service";
 import { RequestScreenshotDto } from "./dto/request-screenshot.dto";
 import { ScreenshotResponseDto } from "./dto/screenshot-response.dto";
 import { ScreenshotService } from "./screenshot.service";
 
 @Controller("screenshot")
+@UseGuards(JwtAuthGuard)
 export class ScreenshotController {
   constructor(
     private readonly screenshotService: ScreenshotService,

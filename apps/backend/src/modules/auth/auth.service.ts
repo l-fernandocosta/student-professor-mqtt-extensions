@@ -3,10 +3,14 @@ import { compare, hash } from "bcryptjs";
 import { randomUUID } from "crypto";
 import { sign } from "jsonwebtoken";
 import { DatabaseService } from "../infra/database.service";
+import { SessionCacheService } from "./session-cache.service";
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly sessionCacheService: SessionCacheService
+  ) {}
 
   async register(
     email: string,
@@ -60,6 +64,8 @@ export class AuthService {
     const accessToken = sign({ sub: user.id, role: user.role }, jwtSecret, {
       expiresIn: "1h"
     });
+
+    await this.sessionCacheService.storeToken(accessToken, { userId: user.id, role: user.role });
 
     return {
       accessToken,

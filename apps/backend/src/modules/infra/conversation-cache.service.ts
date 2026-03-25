@@ -42,6 +42,7 @@ export class ConversationCacheService {
 
     const currentRaw = await redis.get(sessionKey);
     const current = currentRaw ? (JSON.parse(currentRaw) as Record<string, unknown>) : {};
+    const currentCounters = (current.counters as Record<string, unknown> | undefined) ?? {};
 
     const next = {
       sessionId: input.sessionId,
@@ -50,7 +51,7 @@ export class ConversationCacheService {
         receiverId: input.receiverId
       },
       counters: {
-        messageCount: Number(current?.counters?.["messageCount"] ?? 0) + 1
+        messageCount: Number(currentCounters.messageCount ?? 0) + 1
       },
       lastMessage: {
         eventId: input.eventId,

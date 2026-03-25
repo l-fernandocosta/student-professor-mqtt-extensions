@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { MqttGatewayService } from "../mqtt/mqtt.service";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { ChatService } from "./chat.service";
 
 @Controller("chat")
+@UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(
     private readonly chatService: ChatService,
