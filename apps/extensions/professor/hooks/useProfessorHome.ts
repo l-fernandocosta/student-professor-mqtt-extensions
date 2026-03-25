@@ -7,7 +7,9 @@ import { z } from "zod";
 
 const MqttTopics = {
   chatDeliver: (sessionId: string) => `chat/session/${sessionId}/deliver`,
-  screenshotResponse: (teacherId: string) => `screenshot/response/${teacherId}`
+  screenshotResponse: (teacherId: string) => `screenshot/response/${teacherId}`,
+  presenceOnline: "presence/online",
+  chatActive: (studentId: string) => `chat/active/${studentId}`
 };
 
 const authSchema = z.object({
@@ -61,8 +63,19 @@ export function useProfessorHome() {
   const [message, setMessage] = useState("");
   const [correlationId, setCorrelationId] = useState("");
   const [mqttConnected, setMqttConnected] = useState(false);
+  const [onlineStudentIds, setOnlineStudentIds] = useState<string[]>([]);
   const [chatFeed, setChatFeed] = useState<ChatMessage[]>([]);
   const [screenshotDataUrl, setScreenshotDataUrl] = useState("");
+  const [screenshotHistory, setScreenshotHistory] = useState<
+    Array<{
+      correlationId: string | null;
+      studentId: string;
+      status: string;
+      storageUrl: string | null;
+      capturedAt: string | null;
+      createdAt: string;
+    }>
+  >([]);
   const [screenshotUiState, setScreenshotUiState] = useState<ScreenshotUiState>("idle");
   const [lastScreenshotEventAt, setLastScreenshotEventAt] = useState("");
   const [activityMessage, setActivityMessage] = useState("");
@@ -122,12 +135,52 @@ export function useProfessorHome() {
   const onlineQuery = useQuery({
     queryKey: ["presence", "online"],
     queryFn: async () => {
-      const response = await fetch(`${apiBase}/presence/online`);
+      const response = await fetch(`${apiBase}/presence/online`, {
+        headers: { authorization: `Bearer ${token}` }
+      });
       if (!response.ok) throw new Error("Falha ao carregar alunos online");
       return (await response.json()) as { studentIds: string[] };
     },
     enabled: false
   });
+
+  const refreshOnlineFromRest = async (): Promise<void> => {
+    const result = await onlineQuery.refetch();
+    const ids = result.data?.studentIds ?? [];
+    setOnlineStudentIds(ids);
+  };
+
+  const refreshScreenshotHistory = async (): Promise<void> => {
+    if (!teacherId || !token) return;
+    try {
+      const response = await fetch(
+        `${apiBase}/screenshot/history?teacherId=${encodeURIComponent(teacherId)}&limit=50`,
+        { headers: { authorization: `Bearer ${token}` } }
+      );
+      if (!response.ok) return;
+      const data = (await response.json()) as Array<{
+        correlationId: string | null;
+        teacherId: string;
+        studentId: string;
+        status: string;
+        storageUrl: string | null;
+        capturedAt: string | null;
+        createdAt: string;
+      }>;
+      setScreenshotHistory(
+        data.map((item) => ({
+          correlationId: item.correlationId,
+          studentId: item.studentId,
+          status: item.status,
+          storageUrl: item.storageUrl,
+          capturedAt: item.capturedAt,
+          createdAt: item.createdAt
+        }))
+      );
+    } catch {
+      // ignore
+    }
+  };
 
   const registerMutation = useMutation({
     mutationFn: async (values: AuthFormData) => {
@@ -236,8 +289,8 @@ export function useProfessorHome() {
         try {
           const parsed = JSON.parse(raw) as {
             senderId?: string;
-            payload?: { message?: string; imageBase64?: string; imageUrl?: string };
             correlationId?: string;
+            payload?: { studentIds?: unknown; message?: string; imageBase64?: string; imageUrl?: string };
           };
           const currentSessionId = sessionIdRef.current;
           const currentTeacherId = teacherIdRef.current;
@@ -258,14 +311,21 @@ export function useProfessorHome() {
               setLastScreenshotEventAt(new Date().toISOString());
               pushActivity("Screenshot recebido com sucesso.");
               pushToast("Screenshot recebido.");
+              void refreshScreenshotHistory();
             } else if (imageUrl) {
               setScreenshotDataUrl(imageUrl);
               setScreenshotUiState("received");
               setLastScreenshotEventAt(new Date().toISOString());
               pushActivity("Screenshot recebido com sucesso.");
               pushToast("Screenshot recebido.");
+              void refreshScreenshotHistory();
             }
             if (parsed.correlationId) setCorrelationId(parsed.correlationId);
+          }
+          if (topic === MqttTopics.presenceOnline) {
+            const rawIds = parsed.payload?.studentIds;
+            const ids = Array.isArray(rawIds) ? rawIds : [];
+            setOnlineStudentIds(ids.map((value) => String(value)));
           }
         } catch {
           pushLog(`Mensagem MQTT invalida em ${topic}`);
@@ -298,6 +358,17 @@ export function useProfessorHome() {
     const client = mqttRef.current;
     if (client && mqttConnected) {
       client.subscribe(MqttTopics.chatDeliver(nextSessionId), { qos: 1 });
+      client.publish(
+        MqttTopics.chatActive(studentId),
+        JSON.stringify({
+          eventType: "CHAT_SESSION_STARTED",
+          version: 1,
+          timestamp: new Date().toISOString(),
+          sessionId: nextSessionId,
+          teacherId
+        }),
+        { qos: 1 }
+      );
     }
     setChatFeed([]);
     setScreenshotDataUrl("");
@@ -352,7 +423,9 @@ export function useProfessorHome() {
     if (!sessionId || !teacherId || chatFeed.length > 0) return;
     void (async () => {
       try {
-        const response = await fetch(`${apiBase}/chat/history?sessionId=${encodeURIComponent(sessionId)}&limit=50`);
+        const response = await fetch(`${apiBase}/chat/history?sessionId=${encodeURIComponent(sessionId)}&limit=50`, {
+          headers: { authorization: `Bearer ${token}` }
+        });
         if (!response.ok) return;
         const history = (await response.json()) as Array<{ senderId: string; content: string; createdAt: string }>;
         const restored = [...history]
@@ -370,13 +443,14 @@ export function useProfessorHome() {
         pushLog(`Falha ao restaurar historico: ${(error as Error).message}`);
       }
     })();
-  }, [apiBase, sessionId, teacherId, chatFeed.length]);
+  }, [apiBase, sessionId, teacherId, chatFeed.length, token]);
 
   useEffect(() => {
     const client = mqttRef.current;
     if (!client || !mqttConnected) return;
     if (sessionId) client.subscribe(MqttTopics.chatDeliver(sessionId), { qos: 1 });
     if (teacherId) client.subscribe(MqttTopics.screenshotResponse(teacherId), { qos: 1 });
+    client.subscribe(MqttTopics.presenceOnline, { qos: 0 });
   }, [mqttConnected, sessionId, teacherId]);
 
   useEffect(() => {
@@ -390,6 +464,8 @@ export function useProfessorHome() {
   useEffect(() => {
     if (token && teacherId) {
       void connectMqtt();
+      void refreshOnlineFromRest();
+      void refreshScreenshotHistory();
     }
   }, [token, teacherId]);
 
@@ -404,6 +480,7 @@ export function useProfessorHome() {
     registerMutation,
     loginMutation,
     onlineQuery,
+    onlineStudentIds,
     chatMutation,
     screenshotMutation,
     teacherId,
@@ -426,6 +503,8 @@ export function useProfessorHome() {
     disconnectMqtt,
     startConversation,
     sendMessage,
-    requestScreenshot
+    requestScreenshot,
+    refreshOnlineFromRest,
+    screenshotHistory
   };
 }

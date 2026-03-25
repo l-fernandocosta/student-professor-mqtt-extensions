@@ -15,6 +15,14 @@ type ChatCardProps = {
   chatFeed: ChatMessage[];
   message: string;
   screenshotDataUrl: string;
+  screenshotHistory: Array<{
+    correlationId: string | null;
+    studentId: string;
+    status: string;
+    storageUrl: string | null;
+    capturedAt: string | null;
+    createdAt: string;
+  }>;
   waitingScreenshot: boolean;
   onMessageChange: (value: string) => void;
   onSendMessage: () => void;
@@ -27,6 +35,7 @@ export function ChatCard({
   chatFeed,
   message,
   screenshotDataUrl,
+  screenshotHistory,
   waitingScreenshot,
   onMessageChange,
   onSendMessage,
@@ -67,6 +76,33 @@ export function ChatCard({
             </div>
           )}
         </div>
+        {screenshotHistory.length > 0 && (
+          <div className="rounded-xl border border-border bg-white p-3">
+            <p className="mb-2 text-xs font-medium text-[#8d6b4b]">Histórico de screenshots</p>
+            <div className="grid grid-cols-3 gap-2">
+              {screenshotHistory
+                .filter((item) => Boolean(item.storageUrl))
+                .slice(0, 9)
+                .map((item) => (
+                  <a
+                    key={item.correlationId ?? item.createdAt}
+                    href={item.storageUrl ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block overflow-hidden rounded-lg border border-border bg-[#fffdf9]"
+                    title={`Aluno ${item.studentId} • ${item.capturedAt ?? item.createdAt}`}
+                  >
+                    <img
+                      src={item.storageUrl ?? ""}
+                      alt="Screenshot histórico"
+                      className="h-20 w-full object-cover"
+                      loading="lazy"
+                    />
+                  </a>
+                ))}
+            </div>
+          </div>
+        )}
         <div className="flex gap-2">
           <Input
             value={message}

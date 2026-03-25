@@ -11,7 +11,8 @@ export default function ProfessorHome(): React.JSX.Element {
     authForm,
     registerMutation,
     loginMutation,
-    onlineQuery,
+    onlineStudentIds,
+    refreshOnlineFromRest,
     teacherId,
     token,
     selectedStudentId,
@@ -20,6 +21,7 @@ export default function ProfessorHome(): React.JSX.Element {
     mqttConnected,
     chatFeed,
     screenshotDataUrl,
+    screenshotHistory,
     screenshotUiState,
     activityMessage,
     toastMessage,
@@ -64,8 +66,8 @@ export default function ProfessorHome(): React.JSX.Element {
       <div className="grid gap-4 md:grid-cols-[280px_1fr]">
         <OnlineStudentsCard
           selectedStudentId={selectedStudentId}
-          studentIds={onlineQuery.data?.studentIds ?? []}
-          onRefresh={() => void onlineQuery.refetch()}
+          studentIds={onlineStudentIds}
+          onRefresh={() => void refreshOnlineFromRest()}
           onStartConversation={startConversation}
         />
 
@@ -75,6 +77,7 @@ export default function ProfessorHome(): React.JSX.Element {
           chatFeed={chatFeed}
           message={message}
           screenshotDataUrl={screenshotDataUrl}
+          screenshotHistory={screenshotHistory}
           waitingScreenshot={screenshotUiState === "waiting"}
           onMessageChange={setMessage}
           onSendMessage={sendMessage}
