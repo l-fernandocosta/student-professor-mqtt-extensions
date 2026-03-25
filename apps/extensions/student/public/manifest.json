@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Inicie Aluno",
+  "version": "0.1.0",
+  "description": "Extensao do aluno para chat e screenshot remoto.",
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "permissions": ["storage", "activeTab", "tabs", "notifications", "alarms"],
+  "host_permissions": ["http://localhost:3000/*", "http://localhost:1883/*", "ws://localhost:8083/*"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Inicie Aluno",
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png"
+    }
+  }
+}
